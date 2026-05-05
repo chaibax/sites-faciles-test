@@ -2,29 +2,32 @@ import json
 from os.path import isfile
 
 from django.conf import settings
+from django.contrib.auth.models import Group
 from django.core.management.base import BaseCommand
-from wagtail.models import Group, Site
 
 from content_manager.models import CmsDsfrConfig
+from content_manager.utils import get_default_site
 
 
 class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         """
-        Sets the site hostname and site_name,
+        Sets the site hostname, site_name and port,
         and imports contents from the config.json file if present.
         """
 
         # Set the site hostname and site_name
         if "http://" in settings.HOST_URL or "https://" in settings.HOST_URL:
-            raise ValueError(
-                """The HOST_URL environment variable must contain the domain name only,
-                without the port or http/https protocol."""
-            )
+            raise ValueError("""The HOST_URL environment variable must contain the domain name only,
+                without the port or http/https protocol.""")
 
-        site = Site.objects.filter(is_default_site=True).first()
+        site = get_default_site()
         site.hostname = settings.HOST_URL
         site.site_name = settings.WAGTAIL_SITE_NAME
+
+        if settings.HOST_PORT:
+            site.port = settings.HOST_PORT
+
         site.save()
 
         # Translate the names of the default user groups.

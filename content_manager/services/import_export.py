@@ -79,11 +79,15 @@ class ExportPage:
         self.locate_image_ids(self.source_body)
         self.image_ids = list(set(self.image_ids))
 
-    def locate_image_ids(self, json_object):
+    def locate_image_ids(self, json_object):  # NOSONAR
         if isinstance(json_object, dict) and json_object:
             for key, value in json_object.items():
                 if key in ["image", "bg_image"] and value:
-                    self.image_ids.append(value)
+                    # Manage the case of images with alt
+                    if isinstance(value, dict):
+                        self.image_ids.append(value["image"])
+                    else:
+                        self.image_ids.append(value)
                 else:
                     self.locate_image_ids(value)
 
@@ -143,7 +147,7 @@ class ImportPages:
             raw_page = self.pages[page_id]
             source_url = raw_page["meta"]["html_url"]
 
-            page_exists = ContentPage.objects.filter(source_url=source_url).first()
+            page_exists = ContentPage.objects.child_of(self.parent_page).filter(source_url=source_url).first()
             if page_exists:
                 self.update_page(page_id, page_exists)
             else:

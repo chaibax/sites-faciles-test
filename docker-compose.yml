@@ -13,6 +13,7 @@ services:
 
   web:
     build: .
+    user: "1000:1000"
     env_file:
       - .env
     environment:
@@ -21,9 +22,12 @@ services:
       - "${HOST_PORT}:${HOST_PORT}"
     volumes:
       - .:/app
-      - "/app/staticfiles"
+      - medias:/app/medias
+      - staticfiles:/app/staticfiles
     depends_on:
       - db
 
 volumes:
   postgres_data:
+  medias:
+  staticfiles:

@@ -9,20 +9,24 @@ from wagtail.images.api.fields import ImageRenditionField
 from wagtail.models import Page
 from wagtail.search import index
 
-from content_manager.blocks import STREAMFIELD_COMMON_BLOCKS, ButtonsHorizontalListBlock
+from content_manager.blocks.buttons_links import ButtonsHorizontalListBlock
+from content_manager.blocks.core import HERO_STREAMFIELD_BLOCKS, STREAMFIELD_COMMON_BLOCKS
 from content_manager.utils import get_streamfield_raw_text
 
 
 class SitesFacilesBasePage(Page):
     """
     This class defines a base page model that will be used
-    by all pages in Sites Faciles
+    by all pages in the site.
     """
+
+    hero = StreamField(HERO_STREAMFIELD_BLOCKS, blank=True, use_json_field=True, max_num=1)
 
     body = StreamField(
         STREAMFIELD_COMMON_BLOCKS,
         blank=True,
         use_json_field=True,
+        collapsed=True,
     )
     header_with_title = models.BooleanField(_("Show title in header image?"), default=False)  # type: ignore
 
@@ -57,10 +61,8 @@ class SitesFacilesBasePage(Page):
             (
                 "buttons",
                 ButtonsHorizontalListBlock(
-                    help_text=_(
-                        """Please use only one primary button.
-                        If you use icons, use them on all buttons and align them on the same side."""
-                    ),
+                    help_text=_("""Please use only one primary button.
+                        If you use icons, use them on all buttons and align them on the same side."""),
                     label=_("Buttons"),
                 ),
             ),
@@ -69,54 +71,41 @@ class SitesFacilesBasePage(Page):
         null=True,
         blank=True,
     )
-    header_cta_label = models.CharField(
-        _("Call to action label"),
-        help_text=_(
-            "This field is obsolete and will be removed in the near future. Please replace with the CTA buttons above."
-        ),
-        null=True,
-        blank=True,
-    )
-
-    header_cta_link = models.URLField(
-        _("Call to action link"),
-        help_text=_(
-            "This field is obsolete and will be removed in the near future. Please replace with the CTA buttons above."
-        ),
-        null=True,
-        blank=True,
-    )
 
     source_url = models.URLField(
         _("Source URL"),
-        help_text=_("For imported pages, to allow updates."),
+        help_text=_("For imported pages, to allow updates. Max length: 2000 characters."),
+        max_length=2000,
         null=True,
         blank=True,
     )
 
+    preview_image = models.ForeignKey(
+        get_image_model_string(),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name=_("Preview image"),
+        help_text=_("Image displayed as a preview when the page is shared on social media"),
+    )
+
     content_panels = Page.content_panels + [
+        FieldPanel(
+            "hero",
+            heading=_("Hero"),
+            help_text=_(
+                "Header section of the page. If empty, no header is displayed "
+                "and the page title appears at the top of the content."
+            ),
+        ),
         FieldPanel("body", heading=_("Body")),
     ]
 
+    configuration_field_panels = list(Page.promote_panels) + [FieldPanel("preview_image")]
+
     promote_panels = [
-        MultiFieldPanel(Page.promote_panels, _("Common page configuration")),
-        MultiFieldPanel(
-            [
-                FieldPanel("header_with_title"),
-                FieldPanel("header_image"),
-                FieldPanel("header_color_class"),
-                FieldPanel("header_large"),
-                FieldPanel("header_darken"),
-                FieldPanel("header_cta_text"),
-                FieldPanel(
-                    "header_cta_buttons",
-                    heading=_("Call-to-action buttons"),
-                ),
-                FieldPanel("header_cta_label"),
-                FieldPanel("header_cta_link"),
-            ],
-            heading=_("Header options"),
-        ),
+        MultiFieldPanel(configuration_field_panels, _("Common page configuration")),
     ]
 
     search_fields = Page.search_fields + [
@@ -125,9 +114,10 @@ class SitesFacilesBasePage(Page):
 
     # Export fields over the API
     api_fields = [
+        APIField("hero"),
         APIField("body"),
         APIField("header_image"),
-        APIField("header_image_render", serializer=ImageRenditionField("fill-1200x627", source="header_image")),
+        APIField("header_image_render", serializer=ImageRenditionField("fill-1200x630", source="header_image")),
         APIField("header_image_thumbnail", serializer=ImageRenditionField("fill-376x211", source="header_image")),
         APIField("header_with_title"),
         APIField("header_color_class"),
@@ -135,9 +125,9 @@ class SitesFacilesBasePage(Page):
         APIField("header_darken"),
         APIField("header_cta_text"),
         APIField("header_cta_buttons"),
-        APIField("header_cta_label"),
-        APIField("header_cta_link"),
         APIField("public_child_pages"),
+        APIField("preview_image"),
+        APIField("preview_image_render", serializer=ImageRenditionField("fill-1200x630", source="preview_image")),
     ]
 
     @property
@@ -152,6 +142,40 @@ class SitesFacilesBasePage(Page):
             for child in self.get_children().live().public()
         ]
 
+    @property
+    def get_preview_image(self):
+        return self.preview_image or self.header_image
+
+    @property
+    def show_title(self):
+        for block in self.hero:
+            if block.block_type != "old_hero":
+                return False
+
+            if block.value.get("header_with_title") is True:
+                return False
+        return True
+
+    @property
+    def cover(self):
+        hero_blocks = getattr(self, "hero", None)
+
+        if not hero_blocks:
+            return None
+
+        first_hero = hero_blocks[0].value or {}
+
+        if "image" in first_hero:
+            image_block = first_hero.get("image")
+            if isinstance(image_block, dict) and "image" in image_block:
+                return image_block.get("image")
+            return image_block
+
+        if "header_image" in first_hero:
+            return first_hero.get("header_image")
+
+        return None
+
     def get_absolute_url(self):
         return self.url
 
@@ -161,6 +185,8 @@ class SitesFacilesBasePage(Page):
             if search_description:
                 self.search_description = search_description
         return super().save(*args, **kwargs)
+
+    exclude_fields_in_copy = ["source_url"]
 
     class Meta:
         abstract = True

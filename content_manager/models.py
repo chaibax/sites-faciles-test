@@ -1,13 +1,22 @@
+from typing import Union
+
+from django.core.paginator import Paginator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.db.models import Q
 from django.forms.widgets import Textarea, mark_safe
+from django.http import HttpRequest, HttpResponse
+from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
 from dsfr.constants import NOTICE_TYPE_CHOICES
 from modelcluster.fields import ParentalKey
 from modelcluster.models import ClusterableModel
 from modelcluster.tags import ClusterTaggableManager
 from taggit.models import Tag as TaggitTag, TaggedItemBase
+from unidecode import unidecode
 from wagtail.admin.panels import FieldPanel, InlinePanel, MultiFieldPanel, ObjectList, TabbedInterface
 from wagtail.api import APIField
+from wagtail.contrib.routable_page.models import RoutablePageMixin, path
 from wagtail.contrib.settings.models import BaseSiteSetting, register_setting
 from wagtail.fields import RichTextField
 from wagtail.images import get_image_model_string
@@ -26,7 +35,7 @@ class ContentPage(SitesFacilesBasePage):
     class Meta:
         verbose_name = _("Content page")
 
-    settings_panels = SitesFacilesBasePage.settings_panels + [
+    content_panels = SitesFacilesBasePage.content_panels + [
         FieldPanel("tags"),
     ]
 
@@ -36,7 +45,232 @@ class ContentPage(SitesFacilesBasePage):
 
 
 class TagContentPage(TaggedItemBase):
-    content_object = ParentalKey("ContentPage", related_name="contentpage_tags")
+    content_object = ParentalKey("ContentPage", related_name="contentpage_tags")  # type: ignore
+
+
+class CatalogIndexPage(RoutablePageMixin, SitesFacilesBasePage):
+    entries_per_page = models.PositiveSmallIntegerField(
+        default=10,
+        validators=[MaxValueValidator(100), MinValueValidator(1)],
+        verbose_name=_("Entries per page"),
+    )
+
+    # Filters
+    filter_by_tag = models.BooleanField(_("Filter by tag"), default=True)
+
+    SINGLE_FILTER = "single"
+    MULTIPLE_FILTERS = "multiple"
+    FILTER_SELECTION_CHOICES = [
+        (SINGLE_FILTER, _("Single filter selection")),
+        (MULTIPLE_FILTERS, _("Multiple filters selection")),
+    ]
+    filter_selection = models.CharField(
+        _("Filter selection mode"),
+        max_length=50,
+        choices=FILTER_SELECTION_CHOICES,
+        default=SINGLE_FILTER,
+    )
+
+    OR_OPERATOR = "OR"
+    AND_OPERATOR = "AND"
+    MULTIPLE_FILTER_OPERATOR_CHOICES = [
+        (OR_OPERATOR, _("Display results matching at least one of the filters (inclusive OR)")),
+        (AND_OPERATOR, _("Display results matching all filters (cumulative AND)")),
+    ]
+    multiple_filter_operator = models.CharField(
+        _("Logic for multiple filters"),
+        max_length=50,
+        choices=MULTIPLE_FILTER_OPERATOR_CHOICES,
+        default=OR_OPERATOR,
+    )
+
+    settings_panels = SitesFacilesBasePage.settings_panels + [
+        FieldPanel("entries_per_page"),
+        MultiFieldPanel(
+            [
+                FieldPanel("filter_by_tag"),
+                FieldPanel("filter_selection"),
+                FieldPanel("multiple_filter_operator"),
+            ],
+            heading=_("Filters configuration"),
+        ),
+    ]
+
+    subpage_types = ["content_manager.ContentPage"]
+
+    class Meta:
+        verbose_name = _("Catalog index page")
+
+    @property
+    def entries(self):
+        # Get a list of live content pages that are children of this page
+        return ContentPage.objects.child_of(self).live().specific().prefetch_related("tags")
+
+    def get_context(self, request, *args, **kwargs):
+        context = super().get_context(request, *args, **kwargs)
+
+        filtered_data = self._get_filtered_entries_and_context(request, self.entries)
+        entries = filtered_data["entries"]
+        extra_breadcrumbs = filtered_data["extra_breadcrumbs"]
+
+        # Pagination
+        paginator = Paginator(entries, self.entries_per_page)
+        page_number = request.GET.get("page")
+        paginated_entries = paginator.get_page(page_number)
+
+        context.update(
+            {
+                "entries": paginated_entries,
+                "paginator": paginator,
+                "tags": self.get_tags(),
+                "filter_selection_mode": self.filter_selection,
+                **filtered_data,
+            }
+        )
+
+        if extra_breadcrumbs:
+            context["extra_breadcrumbs"] = extra_breadcrumbs
+
+        return context
+
+    def _get_filtered_entries_and_context(self, request: HttpRequest, entries: models.QuerySet) -> dict:
+        selected_tag_slugs = request.GET.getlist("tag")
+        if not selected_tag_slugs:
+            return {
+                "entries": entries,
+                "extra_breadcrumbs": None,
+                "extra_title": "",
+                "current_tags": [],
+                "selected_tag_slugs": [],
+            }
+
+        if self.filter_selection == self.SINGLE_FILTER:
+            return self._handle_single_filter(selected_tag_slugs, entries)
+        if self.filter_selection == self.MULTIPLE_FILTERS:
+            return self._handle_multiple_filters(selected_tag_slugs, entries)
+
+        return {
+            "entries": entries,
+            "extra_breadcrumbs": None,
+            "extra_title": "",
+            "current_tags": [],
+            "selected_tag_slugs": selected_tag_slugs,
+        }
+
+    def _handle_single_filter(self, selected_tag_slugs: list, entries: models.QuerySet) -> dict:
+        if len(selected_tag_slugs) != 1:
+            return {
+                "entries": entries,
+                "extra_breadcrumbs": None,
+                "extra_title": "",
+                "current_tags": [],
+                "selected_tag_slugs": selected_tag_slugs,
+            }
+
+        tag_slug = selected_tag_slugs[0]
+        tag = get_object_or_404(Tag, slug=tag_slug)
+        filtered_entries = entries.filter(tags=tag)
+        current_tags = [tag]
+        extra_breadcrumbs = self._build_breadcrumbs(tag)
+        extra_title = _("Pages tagged with %(tag)s") % {"tag": tag}
+
+        return {
+            "entries": filtered_entries,
+            "extra_breadcrumbs": extra_breadcrumbs,
+            "extra_title": extra_title,
+            "current_tags": current_tags,
+            "selected_tag_slugs": selected_tag_slugs,
+        }
+
+    def _handle_multiple_filters(self, selected_tag_slugs: list, entries: models.QuerySet) -> dict:
+        current_tags = list(Tag.objects.filter(slug__in=selected_tag_slugs))
+
+        if not current_tags:
+            return {
+                "entries": entries,
+                "extra_breadcrumbs": None,
+                "extra_title": "",
+                "current_tags": [],
+                "selected_tag_slugs": selected_tag_slugs,
+            }
+
+        if self.multiple_filter_operator == self.AND_OPERATOR:
+            filtered_entries, extra_title = self._apply_and_operator(current_tags, entries)
+        else:
+            filtered_entries, extra_title = self._apply_or_operator(current_tags, entries)
+
+        extra_breadcrumbs = self._build_breadcrumbs()
+
+        return {
+            "entries": filtered_entries,
+            "extra_breadcrumbs": extra_breadcrumbs,
+            "extra_title": extra_title,
+            "current_tags": current_tags,
+            "selected_tag_slugs": selected_tag_slugs,
+        }
+
+    def _apply_and_operator(self, current_tags: list, entries: models.QuerySet) -> tuple:
+        for tag in current_tags:
+            entries = entries.filter(tags=tag)
+        extra_title = _("Pages tagged with all of: %(tags)s") % {"tags": ", ".join([str(t) for t in current_tags])}
+        return entries, extra_title
+
+    def _apply_or_operator(self, current_tags: list, entries: models.QuerySet) -> tuple:
+        q_objects = Q()
+        for tag in current_tags:
+            q_objects |= Q(tags=tag)
+        entries = entries.filter(q_objects).distinct()
+        extra_title = _("Pages tagged with any of: %(tags)s") % {"tags": ", ".join([str(t) for t in current_tags])}
+        return entries, extra_title
+
+    def _build_breadcrumbs(self, tag: Union["Tag", None] = None) -> dict:
+        breadcrumbs = {
+            "links": [
+                {"url": self.get_url(), "title": self.title},
+                {"url": f"{self.get_url()}{self.reverse_subpage('tags_list')}", "title": _("Tags")},
+            ],
+            "current": tag if tag else _("Selected tags"),
+        }
+        return breadcrumbs
+
+    def get_tags(self) -> models.QuerySet:
+        ids = self.entries.values_list("tags", flat=True)
+        return Tag.objects.tags_with_usecount(1).filter(id__in=ids).order_by("name")
+
+    @property
+    def show_filters(self) -> bool | models.BooleanField:
+        return self.filter_by_tag and self.get_tags().count() > 0
+
+    @path("tags/", name="tags_list")
+    def tags_list(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        extra_title = _("Tags")
+        tags = self.get_tags()
+
+        tags_by_first_letter = {}
+        for tag in tags:
+            first_letter = unidecode(tag.slug[0].upper())
+            if first_letter not in tags_by_first_letter:
+                tags_by_first_letter[first_letter] = []
+            tags_by_first_letter[first_letter].append(tag)
+
+        extra_breadcrumbs = {
+            "links": [
+                {"url": self.get_url(), "title": self.title},
+            ],
+            "current": _("Tags"),
+        }
+
+        return self.render(
+            request,
+            context_overrides={
+                "title": _("Tags"),
+                "sorted_tags": tags_by_first_letter,
+                "page": self,
+                "extra_title": extra_title,
+                "extra_breadcrumbs": extra_breadcrumbs,
+            },
+            template="content_manager/tags_list_page.html",
+        )
 
 
 @register_snippet
@@ -87,9 +321,7 @@ class CustomScriptsSettings(BaseSiteSetting):
         _("Use Tarteaucitron?"),
         default=False,
         help_text=mark_safe(
-            _(
-                'See <a href="https://sites-faciles.beta.numerique.gouv.fr/documentation/gestion-des-cookies/">Documentation</a>'
-            )
+            _('See <a href="https://sites.beta.gouv.fr/documentation/gestion-des-cookies/">Documentation</a>')
         ),
     )
 
@@ -165,7 +397,7 @@ class CmsDsfrConfig(ClusterableModel, BaseSiteSetting):
         blank=True,
         features=LIMITED_RICHTEXTFIELD_FEATURES,
         help_text=_("Can include HTML"),
-    )
+    )  # type: ignore
 
     notice_description = RichTextField(
         _("Notice description"),
@@ -189,9 +421,10 @@ class CmsDsfrConfig(ClusterableModel, BaseSiteSetting):
 
     notice_link = models.URLField(
         _("Notice link"),
+        help_text=_("Standardized consultation link at the end of the notice. Max length: 2000 characters."),
+        max_length=2000,
         default="",
         blank=True,
-        help_text=_("Standardized consultation link at the end of the notice."),
     )
 
     notice_icon_class = models.CharField(
@@ -206,12 +439,14 @@ class CmsDsfrConfig(ClusterableModel, BaseSiteSetting):
 
     beta_tag = models.BooleanField(_("Show the BETA tag next to the title"), default=False)
 
+    header_login_button = models.BooleanField(_("Show a login button in the header"), default=False)
+
     footer_description = RichTextField(
         _("Description"),
         default="",
         blank=True,
         features=LIMITED_RICHTEXTFIELD_FEATURES,
-    )
+    )  # type: ignore
 
     # Operator logo
     operator_logo_file = models.ForeignKey(
@@ -220,7 +455,15 @@ class CmsDsfrConfig(ClusterableModel, BaseSiteSetting):
         blank=True,
         on_delete=models.SET_NULL,
         related_name="+",
-        verbose_name=_("Operator logo"),
+        verbose_name=_("Site logo"),
+    )
+
+    operator_logo_display = models.CharField(
+        _("Logo display"),
+        choices=[("header-footer", _("Header and Footer")), ("header-only", _("Header only"))],
+        default="header-footer",
+        blank=True,
+        max_length=20,
     )
 
     operator_logo_alt = models.CharField(
@@ -234,12 +477,10 @@ class CmsDsfrConfig(ClusterableModel, BaseSiteSetting):
         max_digits=3,
         decimal_places=1,
         null=True,
-        default="0.0",
-        help_text=_(
-            "To be adjusted according to the width of the logo.\
-            Example for a vertical logo: 3.5, Example for a horizontal logo: 8."
-        ),
-    )
+        default="5.0",
+        help_text=_("To be adjusted according to the width of the logo.\
+            Example for a vertical logo: 3.5, Example for a horizontal logo: 8."),
+    )  # type: ignore
 
     search_bar = models.BooleanField(_("Display search bar in the header"), default=False)  # type: ignore
     theme_modale_button = models.BooleanField(_("Display theme modale button"), default=False)  # type: ignore
@@ -249,6 +490,8 @@ class CmsDsfrConfig(ClusterableModel, BaseSiteSetting):
 
     newsletter_url = models.URLField(
         _("Newsletter registration URL"),
+        help_text=_("Max length: 2000 characters."),
+        max_length=2000,
         default="",
         blank=True,
     )
@@ -285,18 +528,17 @@ class CmsDsfrConfig(ClusterableModel, BaseSiteSetting):
                 FieldPanel("notice_is_collapsible"),
             ],
             heading=_("Important notice"),
-            help_text=_(
-                "The important notice banner should only be used for essential and temporary information. \
-                (Excessive or continuous use risks “drowning” the message.)"
-            ),
+            help_text=_("The important notice banner should only be used for essential and temporary information. \
+                (Excessive or continuous use risks “drowning” the message.)"),
         ),
         MultiFieldPanel(
             [
                 FieldPanel("operator_logo_file"),
+                FieldPanel("operator_logo_display"),
                 FieldPanel("operator_logo_alt"),
                 FieldPanel("operator_logo_width"),
             ],
-            heading=_("Operator logo"),
+            heading=_("Site logo"),
         ),
         MultiFieldPanel(
             [
@@ -304,6 +546,7 @@ class CmsDsfrConfig(ClusterableModel, BaseSiteSetting):
                 FieldPanel("mourning"),
                 FieldPanel("beta_tag"),
                 FieldPanel("theme_modale_button"),
+                FieldPanel("header_login_button"),
             ],
             heading=_("Advanced settings"),
         ),
@@ -389,11 +632,13 @@ class CmsDsfrConfig(ClusterableModel, BaseSiteSetting):
 
 
 class SocialMediaItem(Orderable):
-    site_config = ParentalKey(CmsDsfrConfig, related_name="social_media_items")
+    site_config = ParentalKey(CmsDsfrConfig, related_name="social_media_items")  # type: ignore
     title = models.CharField(_("Title"), max_length=200, default="", blank=True)
 
     url = models.URLField(
         _("URL"),
+        help_text=_("Max length: 2000 characters."),
+        max_length=2000,
         default="",
         blank=True,
     )
@@ -427,7 +672,9 @@ class MegaMenu(ClusterableModel):
         "wagtailmenus.MainMenuItem", on_delete=models.CASCADE, related_name="megamenu_parent_menu_items"
     )
     description = models.TextField(_("Description"), blank=True)
-    main_link = models.URLField(_("Main link"), blank=True, null=True)
+    main_link = models.URLField(
+        _("Main link"), help_text=_("Max length: 2000 characters."), max_length=2000, blank=True, null=True
+    )
 
     panels = [
         FieldPanel("name"),

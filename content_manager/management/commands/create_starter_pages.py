@@ -1,14 +1,14 @@
-from django.conf import settings
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.urls import reverse
 from wagtail.images.models import Image
-from wagtail.models import Page, Site
+from wagtail.models import Page
 from wagtail.rich_text import RichText
 from wagtailmenus.models.menuitems import FlatMenuItem, MainMenuItem
 
 from content_manager.models import ContentPage
 from content_manager.services.accessors import get_or_create_footer_menu, get_or_create_main_menu
+from content_manager.utils import get_default_site
 from forms.models import FormField, FormPage
 
 ALL_ALLOWED_SLUGS = ["home", "mentions-legales", "accessibilite", "contact"]
@@ -16,8 +16,7 @@ ALL_ALLOWED_SLUGS = ["home", "mentions-legales", "accessibilite", "contact"]
 
 class Command(BaseCommand):
     help = """
-    Creates a series of starter pages, in order to avoid new sites having only a
-    blank "Welcome to Wagtail" page.
+    Creates a series of starter pages, in order to avoid new sites having only a blank "Welcome to Wagtail" page.
     """
 
     def add_arguments(self, parser):
@@ -26,13 +25,27 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **kwargs):
-        pictograms_exist = Image.objects.filter(title__contains="Pictogrammes DSFR").count()
-        if not pictograms_exist:
-            call_command("import_dsfr_pictograms")
+        call_command("import_dsfr_pictograms")
+        call_command("import_illustration_images")
 
         slugs = kwargs.get("slug")
 
         if not slugs:
+            # Only run the script on a new site or for specific slugs
+            if Page.objects.last().id > 2:
+                self.stdout.write(
+                    self.style.WARNING(
+                        "The site appears to already have pages, so this script won't run without params."
+                    )
+                )
+                self.stdout.write(
+                    self.style.WARNING("Please run this script on a new site, or with the 'slug' parameter.")
+                )
+                return
+            else:
+                # on a new site, first set the config
+                call_command("set_config")
+
             slugs = ALL_ALLOWED_SLUGS
 
         for slug in slugs:
@@ -98,9 +111,13 @@ class Command(BaseCommand):
 
         # Create the page
         body = []
-        title = "Votre nouveau site avec Sites faciles"
+        title = "Votre nouveau site avec Sites Conformes"
 
         image = Image.objects.filter(title="Pictogrammes DSFR — Digital — Coding").first()
+        # Mark the image as decorative for validations
+        if image:
+            image.is_decorative = True
+            image.save()
 
         text_raw = """<p>Bienvenue !</p>
 
@@ -109,7 +126,8 @@ class Command(BaseCommand):
         <p>Vous pouvez maintenant vous connecter dans l’administration et personnaliser le site.</p>
         """
 
-        admin_url = f"{settings.WAGTAILADMIN_BASE_URL}{reverse('wagtailadmin_home')}"
+        # Use the reversed admin path directly to avoid duplicating the script_name
+        admin_url = reverse("wagtailadmin_home")
 
         image_and_text_block = {
             "image": image,
@@ -134,7 +152,7 @@ class Command(BaseCommand):
         home_page = root.add_child(instance=ContentPage(title=title, body=body, show_in_menus=True))
 
         # Define it as default for the default site
-        site = Site.objects.filter(is_default_site=True).first()
+        site = get_default_site()
 
         site.root_page_id = home_page.id
         site.save()
@@ -159,7 +177,7 @@ class Command(BaseCommand):
             self.stdout.write(f"The {slug} page seem to already exist with id {already_exists.id}")
             return
 
-        home_page = Site.objects.filter(is_default_site=True).first().root_page
+        home_page = get_default_site().root_page
         new_page = home_page.add_child(instance=ContentPage(title=title, body=body, slug=slug, show_in_menus=True))
 
         footer_menu = get_or_create_footer_menu()
@@ -188,18 +206,16 @@ class Command(BaseCommand):
 
         # Create the form page
         title = "Contact"
-        intro = RichText(
-            """
+        intro = RichText("""
             <p>Bonjour, n’hésitez pas à nous contacter via le formulaire ci-dessous.</p>
             <p></p>
             <p>Vous pouvez également nous contacter via &lt;autres méthodes&gt;.</p>
             <p></p>
-            <p>Les champs marqués d’une astérisque (*) sont obligatoires.</p>"""
-        )
+            <p>Les champs marqués d’une astérisque (*) sont obligatoires.</p>""")
 
         thank_you_text = RichText("<p>Merci pour votre message ! Nous reviendrons vers vous rapidement.</p>")
 
-        default_site = Site.objects.filter(is_default_site=True).first()
+        default_site = get_default_site()
         home_page = default_site.root_page
         contact_page = home_page.add_child(
             instance=FormPage(title=title, slug=slug, intro=intro, thank_you_text=thank_you_text, show_in_menus=True)

@@ -8,8 +8,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: \n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-09-04 14:57+0200\n"
-"PO-Revision-Date: 2024-09-04 17:00+0200\n"
+"POT-Creation-Date: 2026-02-26 18:17+0100\n"
+"PO-Revision-Date: 2025-04-24 11:26+0200\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "Language: fr\n"
@@ -19,97 +19,152 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n > 1);\n"
 "X-Generator: Poedit 3.4.2\n"
 
-#: templates/blocks/follow.html:9
+msgid "Error 404 — Page not found"
+msgstr "Erreur 404 — Page non trouvée"
+
+msgid "Page not found"
+msgstr "Page non trouvée"
+
+msgid ""
+"The page you are looking for could not be found. We apologize for any "
+"inconvenience."
+msgstr ""
+"La page que vous cherchez est introuvable. Veuillez nous excuser pour la "
+"gêne occasionnée."
+
+msgid ""
+"If you typed the web address into your browser, check that it is correct. "
+"The page may no longer be available."
+msgstr ""
+"Si vous avez tapé l’adresse web dans le navigateur, vérifiez qu’elle est "
+"correcte. La page n’est peut-être plus disponible."
+
+msgid "In this case, to continue your visit, you can consult our home page."
+msgstr ""
+"Dans ce cas, pour continuer votre visite, vous pouvez consulter notre page "
+"d’accueil."
+
+msgid "Back to home page"
+msgstr "Retourner à l’accueil"
+
+msgid "Error 500 — Unexpected error"
+msgstr "Erreur 500 — Erreur inattendue"
+
+msgid "Unexpected error"
+msgstr "Erreur inattendue"
+
+msgid "Error 500"
+msgstr "Erreur 500"
+
+msgid "Please try refreshing the page or try again later."
+msgstr "Essayez de rafraîchir la page ou bien ressayez plus tard."
+
+msgid ""
+"Sorry, there is an issue with the service, we are working to resolve it as "
+"quickly as possible."
+msgstr ""
+"Désolé, le service rencontre un problème, nous travaillons pour le résoudre "
+"le plus rapidement possible."
+
 msgctxt "Section title"
 msgid "Subscribe to our newsletter"
 msgstr "Abonnez-vous à notre lettre d’information"
 
-#: templates/blocks/follow.html:13
 msgctxt "Button title"
 msgid "Subscribe to our newsletter"
 msgstr "S'abonner à notre lettre d’information"
 
-#: templates/blocks/follow.html:18
 msgid "Subscribe"
 msgstr "S’abonner"
 
-#: templates/blocks/follow.html:30
 msgid "Follow us <br /> on social media"
 msgstr "Suivez-nous<br />sur les réseaux sociaux"
 
-#: templates/blocks/footer.html:5
-msgid "Back to home page"
-msgstr "Retourner à l’accueil"
+msgid "Sitemap"
+msgstr "Plan du site"
 
-#: templates/blocks/footer.html:50
 msgid "Cookie settings"
 msgstr "Gestion des cookies"
 
-#: templates/blocks/footer.html:59
 msgid "Display settings"
 msgstr "Paramètres d’affichage"
 
-#: templates/blocks/footer.html:65 templates/blocks/notice.html:4
-#: templates/blocks/share.html:2
 msgid "Opens a new window"
 msgstr "Ouvre une nouvelle fenêtre"
 
-#: templates/blocks/footer.html:67
 msgid "This website is made with"
 msgstr "Ce site est fait avec"
 
-#: templates/blocks/header.html:5 templates/blocks/header.html:13
 msgid "Home page"
 msgstr "Accueil"
 
-#: templates/blocks/header.html:53 templates/blocks/header.html:78
+msgid "Hello"
+msgstr "Bonjour"
+
+msgid "Log out"
+msgstr "Déconnexion"
+
+msgid "Log in"
+msgstr "Connexion"
+
 msgid "Search"
 msgstr "Rechercher"
 
-#: templates/blocks/header.html:57 templates/blocks/header.html:101
 msgid "Close"
 msgstr "Fermer"
 
-#: templates/blocks/header.html:87
 msgid "Menu"
 msgstr "Menu"
 
-#: templates/blocks/header.html:106
 msgid "Main menu"
 msgstr "Menu principal"
 
-#: templates/blocks/notice.html:2
 msgid "Hide message"
 msgstr "Masquer le message"
 
-#: templates/blocks/notice.html:3
 msgid "Consultation link"
 msgstr "Lien de consultation"
 
-#: templates/blocks/share.html:6
 msgid "Share this page"
 msgstr "Partager cette page"
 
-#: templates/blocks/share.html:10
 msgid "Share on Facebook"
 msgstr "Partager sur Facebook"
 
-#: templates/blocks/share.html:22
 msgid "Share on X (previously Twitter)"
 msgstr "Partager sur X (anciennement Twitter)"
 
-#: templates/blocks/share.html:36
 msgid "Share on LinkedIn"
 msgstr "Partager sur LinkedIn"
 
-#: templates/blocks/share.html:50
 msgid "Share via email"
 msgstr "Partager par email"
 
-#: templates/blocks/share.html:63
 msgid "Page URL copied to clipboard."
 msgstr "Adresse de la page copiée dans le presse-papiers."
 
-#: templates/blocks/share.html:67
 msgid "Copy to clipboard"
 msgstr "Copier dans le presse-papiers"
+
+#~ msgid "Invalid response format or token verification failed"
+#~ msgstr "Format de réponse invalide ou vérification du jeton échouée"
+
+#~ msgid "User account is disabled"
+#~ msgstr "Compte utilisateur désactivé"
+
+#~ msgid "sub"
+#~ msgstr "sub"
+
+#~ msgid ""
+#~ "Required. 255 characters or fewer. Letters, numbers, and @/./+/-/_/: "
+#~ "characters only."
+#~ msgstr ""
+#~ "Obligatoire. 255 caractères ou moins, parmi lettres, nombres et @/./+/-/"
+#~ "_/: uniquement."
+
+#~ msgid ""
+#~ "Enter a valid sub. This value may contain only letters, numbers, and @/./"
+#~ "+/-/_/: characters."
+#~ msgstr ""
+#~ "Entrez un sub valide. Cette valeur ne peut contenir que des lettres, "
+#~ "nombres et @/./+/-/_/: uniquement."

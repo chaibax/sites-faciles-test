@@ -1,4 +1,4 @@
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.test import override_settings
 from wagtail.models import Page
 from wagtail.rich_text import RichText
@@ -10,6 +10,97 @@ from content_manager.utils import import_image
 from events.models import EventEntryPage, EventsIndexPage
 
 # Tests for blocks that have a value_class
+
+User = get_user_model()
+
+
+class TypedTableBlockTestCase(WagtailPageTestCase):
+    def setUp(self) -> None:
+        home = Page.objects.get(slug="home")
+
+        body = [
+            {
+                "type": "table",
+                "value": {
+                    "columns": [
+                        {"type": "text", "heading": "Name"},
+                        {"type": "text", "heading": "Comment"},
+                    ],
+                    "rows": [
+                        {
+                            "values": [
+                                '<p data-block-key="ab12c">Line 1</p>',
+                                '<p data-block-key="def34g">Example text with <b>formating</b>.</p>',
+                            ]
+                        },
+                        {
+                            "values": [
+                                '<p data-block-key="hij56k">Line 2</p>',
+                                '<p data-block-key="lmn78o">Example other text with <b>formating</b>.</p>',
+                            ]
+                        },
+                    ],
+                    "caption": "Example table",
+                },
+            }
+        ]
+
+        self.content_page = home.add_child(
+            instance=ContentPage(title="Sample table page", slug="content-page", body=body)
+        )
+        self.content_page.save()
+
+    def test_page_with_table_is_renderable(self):
+        self.assertPageIsRenderable(self.content_page)
+
+    def test_page_with_table_has_content(self):
+        response = self.client.get(self.content_page.url)
+
+        self.assertInHTML(
+            """<tr>
+                <th scope="col">Name</th>
+                <th scope="col">Comment</th>
+        </tr>""",
+            response.content.decode(),
+        )
+
+    def test_thead_row_is_not_shown_if_col_headings_are_empty(self):
+        body = [
+            {
+                "type": "table",
+                "value": {
+                    "columns": [
+                        {"type": "text", "heading": ""},
+                        {"type": "text", "heading": ""},
+                    ],
+                    "rows": [
+                        {
+                            "values": [
+                                '<p data-block-key="ab12c">Line 1</p>',
+                                '<p data-block-key="def34g">Example text with <b>formating</b>.</p>',
+                            ]
+                        },
+                        {
+                            "values": [
+                                '<p data-block-key="hij56k">Line 2</p>',
+                                '<p data-block-key="lmn78o">Example other text with <b>formating</b>.</p>',
+                            ]
+                        },
+                    ],
+                    "caption": "Example table",
+                },
+            }
+        ]
+
+        self.content_page.body = body
+        self.content_page.save()
+
+        response = self.client.get(self.content_page.url)
+
+        self.assertNotContains(
+            response,
+            "thead",
+        )
 
 
 class HorizontalCardBlockTestCase(WagtailPageTestCase):
@@ -61,7 +152,17 @@ class HorizontalCardBlockTestCase(WagtailPageTestCase):
         body = [
             (
                 "card",
-                {"title": "Sample card", "description": "This is a sample card.", "url": "https://www.info.gouv.fr"},
+                {
+                    "title": "Sample card",
+                    "description": "This is a sample card.",
+                    "link": {
+                        "link_type": "external_url",
+                        "external_url": "https://www.info.gouv.fr",
+                        "page": None,
+                        "document": None,
+                        "anchor": "",
+                    },
+                },
             )
         ]
         self.content_page.body = body
@@ -73,7 +174,11 @@ class HorizontalCardBlockTestCase(WagtailPageTestCase):
         # Count = 3 (page header and footer, card)
         self.assertContains(response, "fr-enlarge-link", count=3)
 
-        self.assertInHTML("""<a href="https://www.info.gouv.fr">Sample card</a>""", response.content.decode())
+        self.assertInHTML(
+            """<a href="https://www.info.gouv.fr" target="_blank" rel="noopener noreferrer">Sample card
+            <span class="fr-sr-only">Ouvre une nouvelle fenêtre</span></a>""",
+            response.content.decode(),
+        )
 
     def test_card_with_cta_links(self):
         body = [
@@ -82,7 +187,13 @@ class HorizontalCardBlockTestCase(WagtailPageTestCase):
                 {
                     "title": "Sample card",
                     "description": "This is a sample card.",
-                    "url": "https://www.info.gouv.fr",
+                    "link": {
+                        "link_type": "external_url",
+                        "external_url": "https://www.info.gouv.fr",
+                        "page": None,
+                        "document": None,
+                        "anchor": "",
+                    },
                     "call_to_action": [
                         {
                             "type": "links",
@@ -110,7 +221,11 @@ class HorizontalCardBlockTestCase(WagtailPageTestCase):
         # Count = 3 (page header and footer, but not the card as it has several links)
         self.assertContains(response, "fr-enlarge-link", count=2)
 
-        self.assertInHTML("""<a href="https://www.info.gouv.fr">Sample card</a>""", response.content.decode())
+        self.assertInHTML(
+            """<a href="https://www.info.gouv.fr" target="_blank" rel="noopener noreferrer">Sample card
+            <span class="fr-sr-only">Ouvre une nouvelle fenêtre</span></a>""",
+            response.content.decode(),
+        )
 
         self.assertInHTML(
             """<ul class="fr-links-group">
@@ -128,7 +243,13 @@ class HorizontalCardBlockTestCase(WagtailPageTestCase):
                 {
                     "title": "Sample card",
                     "description": "This is a sample card.",
-                    "url": "https://www.info.gouv.fr",
+                    "link": {
+                        "link_type": "external_url",
+                        "external_url": "https://www.info.gouv.fr",
+                        "page": None,
+                        "document": None,
+                        "anchor": "",
+                    },
                     "call_to_action": [
                         {
                             "type": "buttons",
@@ -157,17 +278,19 @@ class HorizontalCardBlockTestCase(WagtailPageTestCase):
         # Count = 3 (page header and footer, but not the card as it has several links)
         self.assertContains(response, "fr-enlarge-link", count=2)
 
-        self.assertInHTML("""<a href="https://www.info.gouv.fr">Sample card</a>""", response.content.decode())
+        self.assertInHTML(
+            """<a href="https://www.info.gouv.fr" target="_blank" rel="noopener noreferrer">Sample card
+            <span class="fr-sr-only">Ouvre une nouvelle fenêtre</span></a>""",
+            response.content.decode(),
+        )
 
         self.assertInHTML(
-            """<ul class="fr-btns-group fr-btns-group--inline-lg">
-                <li>
-                    <a class="fr-btn fr-btn--secondary"
-                    href="https://numerique.gouv.fr"
-                    target="_blank"
-                    rel="noopener external">Label</a>
-                </li>
-            </ul>""",
+            """<div class="fr-btns-group fr-btns-group--inline-lg">
+                  <a class="fr-btn fr-btn--secondary"
+                  href="https://numerique.gouv.fr"
+                  target="_blank"
+                  rel="noopener external">Label <span class="fr-sr-only">Ouvre une nouvelle fenêtre</span></a>
+            </div>""",
             response.content.decode(),
         )
 
@@ -178,7 +301,13 @@ class HorizontalCardBlockTestCase(WagtailPageTestCase):
                 {
                     "title": "Sample card",
                     "description": "This is a sample card.",
-                    "url": "https://www.info.gouv.fr",
+                    "link": {
+                        "link_type": "external_url",
+                        "external_url": "https://www.info.gouv.fr",
+                        "page": None,
+                        "document": None,
+                        "anchor": "",
+                    },
                     "top_detail_badges_tags": [
                         {
                             "type": "tags",
@@ -208,7 +337,11 @@ class HorizontalCardBlockTestCase(WagtailPageTestCase):
         # Count = 3 (page header and footer, card)
         self.assertContains(response, "fr-enlarge-link", count=3)
 
-        self.assertInHTML("""<a href="https://www.info.gouv.fr">Sample card</a>""", response.content.decode())
+        self.assertInHTML(
+            """<a href="https://www.info.gouv.fr" target="_blank" rel="noopener noreferrer">Sample card
+            <span class="fr-sr-only">Ouvre une nouvelle fenêtre</span></a>""",
+            response.content.decode(),
+        )
 
         self.assertInHTML(
             """<ul class="fr-tags-group">
@@ -226,7 +359,13 @@ class HorizontalCardBlockTestCase(WagtailPageTestCase):
                 {
                     "title": "Sample card",
                     "description": "This is a sample card.",
-                    "url": "https://www.info.gouv.fr",
+                    "link": {
+                        "link_type": "external_url",
+                        "external_url": "https://www.info.gouv.fr",
+                        "page": None,
+                        "document": None,
+                        "anchor": "",
+                    },
                     "top_detail_badges_tags": [
                         {
                             "type": "tags",
@@ -256,7 +395,11 @@ class HorizontalCardBlockTestCase(WagtailPageTestCase):
         # Count = 3 (page header and footer, but not the card as it has several links)
         self.assertContains(response, "fr-enlarge-link", count=2)
 
-        self.assertInHTML("""<a href="https://www.info.gouv.fr">Sample card</a>""", response.content.decode())
+        self.assertInHTML(
+            """<a href="https://www.info.gouv.fr" target="_blank" rel="noopener noreferrer">Sample card
+            <span class="fr-sr-only">Ouvre une nouvelle fenêtre</span></a>""",
+            response.content.decode(),
+        )
 
         self.assertInHTML(
             """<ul class="fr-tags-group">
